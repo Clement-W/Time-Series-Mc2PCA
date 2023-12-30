@@ -2,14 +2,17 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-def Mc2PCA(df, K, p, epsilon, max_iter= 100):
+def Mc2PCA(X, K, p, epsilon, max_iter= 100):
     """
-    Perform the Mc2PCA algorithm on the given DataFrame.
+    Perform the Mc2PCA algorithm on the given DataFrame or NumPy array.
     Implementation following the algorithm described in the paper:
     Li, H. (2019). Multivariate time series clustering based on common principal component analysis. Neurocomputing, 349.
 
     Args: 
-        df (DataFrame): The input DataFrame containing the multivariate time series data with samples as rows and variables as columns, and each cell containing a pandas Series object or a numpy ndarray.
+        X (DataFrame or ndarray): The input MTS that can be stored as a DataFrame containing the data with samples as 
+                                    rows and variables as columns, and each cell containing a pandas Series 
+                                    object or a numpy ndarray, OR a 2D NumPy array with the same shape and containing
+                                    a 1D NumPy array in each cell.
         K (int): The number of clusters to form using k-means.
         p (int): The number of principal components to retain in CPCA.
         epsilon (float): The threshold for convergence. 
@@ -20,14 +23,17 @@ def Mc2PCA(df, K, p, epsilon, max_iter= 100):
             - list: A list containing K arrays, each array containing the indices of the samples in the kth cluster.
             - list: The list of errors at each iteration.
     """
+    # if X is a dataframe, convert into npy array
+    if isinstance(X, pd.DataFrame):
+        X = convert_to_numpy(X)
 
     # Center the data
-    df = center_data(df)
+    X = center_data(X)
     # Compute the covariance matrices of each time series
-    cov_matrices = compute_covariance_matrices(df)
+    cov_matrices = compute_covariance_matrices(X)
  
     # Initialize the indices
-    idx = np.array_split(np.arange(df.shape[0]), K)
+    idx = np.array_split(np.arange(X.shape[0]), K)
     # Initialize the associated common spaces
     S = compute_common_spaces(cov_matrices,idx,p)
 
@@ -37,7 +43,7 @@ def Mc2PCA(df, K, p, epsilon, max_iter= 100):
     for t in tqdm(range(1, max_iter + 1)):
 
         # Assign the clusters based on k-means
-        I,v = assign_clusters(df,S,K)
+        I,v = assign_clusters(X,S,K)
         E.append(np.sum(v)/len(v)) # normalize the error
 
         # Check convergence
@@ -53,50 +59,79 @@ def Mc2PCA(df, K, p, epsilon, max_iter= 100):
     return idx, E
 
 
+def convert_to_numpy(df):
+    """
+    Convert a DataFrame where each cell contains a pandas Series into a 1D NumPy array.
+
+    Args:
+        df (DataFrame): The input DataFrame containing the data with samples as rows and variables as columns, 
+                        and each cell containing a pandas Series object, or a numpy ndarray.
+    
+    Returns:
+        ndarray: The 2D NumPy array containing the data with samples as rows and variables as columns, 
+                 and each cell containing a 1D NumPy array.
+    """
+
+    # First convert the pandas series to ndarray if necessary
+    if isinstance(df.iloc[0,0], pd.Series):
+        for col_name in df.columns:
+            df[col_name] = df[col_name].apply(lambda series: series.to_numpy() if series is not None else np.nan)
+
+    df_npy = df.to_numpy()
+
+    return df_npy
+ 
+
 def center_data(X) :
     """
     Center the data by subtracting the mean of each time series from each cell.
 
     Args:
-        X (DataFrame): The input DataFrame containing the multivariate time series data with samples as rows and variables as columns, and each cell containing a pandas Series object or a numpy ndarray.
+        X (ndarray): The input 2D NumPy array containing the multivariate time series data with samples as rows and variables as columns, and each cell containing a 1D numpy ndarray.
     
     Returns:
-        DataFrame: The centered DataFrame.
+        ndarray: The centered 2D NumPy array.
     """
-    # Compute the means of each time series 
-    means = X.map(lambda series: np.mean(series) if series is not None else np.nan)
-    # Subtract the means from each cell
-    normalized_X = (X - means).copy()
+    n, m = X.shape  # Number of samples and features
+    centered_X = np.empty_like(X)
 
-    # If the cells contains a pandas Series object, convert it into a numpy array
-    if isinstance(normalized_X.iloc[0,0], pd.Series):
-        for col_name in X.columns:
-            normalized_X[col_name] = normalized_X[col_name].apply(lambda series: series.to_numpy() if series is not None else np.nan)
+    for i in range(n):
+        for j in range(m):
+            time_series = X[i, j]
+            mean = np.mean(time_series)
+            centered_X[i, j] = time_series - mean
 
-    return normalized_X
+    return centered_X
+         
 
-def compute_covariance_matrices(centered_df):
+def compute_covariance_matrices(centered_X):
     """
-    Compute the covariance matrix of each time series in the given DataFrame.
+    Compute the covariance matrix of each time series in the given 2D Numpy array.
 
     Args:
-        df (DataFrame): The input DataFrame containing the centered multivariate time series data.
+        centered_X (ndarray): The input 2D NumPy array containing the centered multivariate time series data, 
+                              where each cell contains a 1D NumPy array representing a time series.
     
     Returns:
-        list: A list containing the covariance matrix of each time series in the given DataFrame.
+        list: A list containing the covariance matrix of each time series in the given array.
     """
+    n,m = centered_X.shape
 
     # Store the covariance matrix of each time series
     cov_matrices = []
 
-    for _, row in centered_df.iterrows():
-        # Compute a matrix of size (n_variables, series_length) to represent the time series
-        row_data = np.stack(row.values)
-        # Compute the covariance matrix of the time series (n_variables, n_variables), suppose that df is centered
-        cov_matrix = np.cov(row_data, bias=True)  
-        # Add the covariance matrix to the list
+    for i in range(n):
+        # Extract and stack each time series in the row into a 2D array
+        row_data = np.column_stack([centered_X[i, j] for j in range(m) if centered_X[i, j] is not None])
+
+        # Compute the covariance matrix of the time seriif row_data.size > 0:
+        cov_matrix = np.cov(row_data.T, bias=True)  
+       
         cov_matrices.append(cov_matrix)
+
     return cov_matrices
+
+
 
 def CPCA(Sigma, p):
     """
@@ -140,7 +175,7 @@ def compute_common_spaces(cov_matrices,cluster_indices,p):
     return S
 
 
-def assign_clusters(df,S,K):
+def assign_clusters(X,S,K):
     """
     Assign each multivariate time series to a cluster based on the reconstruction error.
 
@@ -149,7 +184,8 @@ def assign_clusters(df,S,K):
     For empty clusters (very unlikely), assign a high error value.
 
     Args:
-        df (DataFrame): The input DataFrame containing the centered multivariate time series data.
+        X (ndarray): The input array containing the centered multivariate time series as (nb_samples,nb_variables) 
+                        where each cell contains a 1D NumPy array representing a time series.
         S (list of ndarray): A list of K arrays, each array containing the common space of the kth cluster.
         K (int): The number of clusters.
     
@@ -158,24 +194,20 @@ def assign_clusters(df,S,K):
             - ndarray: An array containing the indices of the clusters to which each time series is assigned.
             - ndarray: An array containing containing the minimum reconstruction error for each time series.
     """
-    n = df.shape[0]
-    Error = np.zeros((n,K))
+    n = X.shape[0]
+    Error = np.zeros((n, K))
     
     for k in range(K):
-        if(S[k] is not None):
-            # Compute the sum of squares transformation matrix
+        if S[k] is not None:
             sst = np.matmul(S[k], S[k].T)
-            # Compute the reconstruction error for each time series
             for i in range(n):
-                Y = np.matmul(df.iloc[i],sst)
-                err = (np.linalg.norm(df.iloc[i] - Y))
-                Error[i,k]= err.sum()/len(err) # normalize the error
+                time_series = np.column_stack(X[i, :])  # Stacking the 1D arrays in the row into a 2D array (length,nb_variables)
+                Y = np.matmul(time_series, sst)
+                err = np.linalg.norm(time_series - Y, axis=1)
+                Error[i, k] = np.mean(err)  # Mean error for the time series
         else:
-            # Assign a high error value for empty clusters
-            Error[:,k] = np.inf 
+            Error[:, k] = np.inf
 
-    # Assign each time series to the cluster with the lowest reconstruction error
     I = np.argmin(Error, axis=1)
-    # Store the minimum reconstruction error for each time series
     v = Error[np.arange(n), I]
-    return I,v
+    return I, v
