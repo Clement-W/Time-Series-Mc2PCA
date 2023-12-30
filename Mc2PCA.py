@@ -10,15 +10,21 @@ def normalize_series(series, column_mean):
 
 def normalize(X) :
     means = X.map(lambda series: np.mean(series) if series is not None else np.nan)
-    # Calcul de la moyenne par colonne des moyennes
-    column_means = means.mean()
+    normalized_X = (X - means).copy()
 
-    # Appliquer la normalisation à chaque cellule
-    normalized_X = pd.DataFrame()
+    # Convert all series to numpy arrays
     for col_name in X.columns:
-        normalized_X[col_name] = X[col_name].apply(normalize_series, args=(column_means[col_name],))
+        normalized_X[col_name] = normalized_X[col_name].apply(lambda series: series.to_numpy() if series is not None else np.nan)
 
-    # Afficher les premières lignes des DataFrame normalisés pour vérifier
+    # # Calcul de la moyenne par colonne des moyennes
+    # column_means = means.mean()
+
+    # # Appliquer la normalisation à chaque cellule
+    # normalized_X = pd.DataFrame()
+    # for col_name in X.columns:
+    #     normalized_X[col_name] = X[col_name].apply(normalize_series, args=(column_means[col_name],))
+
+    # # Afficher les premières lignes des DataFrame normalisés pour vérifier
     return normalized_X
 
 def cov_matrix(df):
