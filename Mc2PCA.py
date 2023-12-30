@@ -43,8 +43,10 @@ def cov_matrix(df):
 
 def CPCA(Sigma, p):
     mean_cov = np.mean(Sigma, axis=0)
-    u, _, _ = np.linalg.svd(mean_cov)
-    return u[:, :p]
+    if len(mean_cov)==0:
+        return np.ones((Sigma.shape[0], p))
+    u, _, vt = np.linalg.svd(mean_cov)
+    return vt[:p,:].T #u[:, :p]
 
 
 # On fait comme dans l'article, pas au nombre d'itérations mais on regarde l'évolution et on arrête en dessous d'un certain seuil
