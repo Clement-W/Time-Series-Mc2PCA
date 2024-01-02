@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+import pickle
 
 
 def convert_to_numpy(df):
@@ -158,7 +159,6 @@ def assign_clusters(X,S,K):
 
 class Mc2PCA() :
     def __init__(self, 
-                    X : np.ndarray or pd.DataFrame,
                     K : int,
                     p : int,
                     epsilon : float = 1e-7,
@@ -201,7 +201,7 @@ class Mc2PCA() :
         """
 
         # if X is a dataframe, convert into npy array
-        if isinstance(self.X, pd.DataFrame):
+        if isinstance(X, pd.DataFrame):
             X = convert_to_numpy(X)
 
         # Center the data
@@ -217,7 +217,7 @@ class Mc2PCA() :
         # Store the errors
         E = [np.inf]
 
-        for t in tqdm(range(1, max_iter + 1)):
+        for t in tqdm(range(1, self.max_iter + 1)):
 
             # Assign the clusters based on k-means
             I,v = assign_clusters(X,S,self.K)
@@ -238,72 +238,61 @@ class Mc2PCA() :
         self.S = S
         return idx, E
 
-        def inference(self, X_test : np.ndarray or pd.DataFrame):
-            """  
-            Perform inference on the given test set using the learned model.
+    def inference(self, X_test : np.ndarray or pd.DataFrame):
+        """  
+        Perform inference on the given test set using the learned model.
 
-            Args:
-                X_test (DataFrame or ndarray): The input MTS that can be stored as a DataFrame containing the data with samples as 
-                            rows and variables as columns, and each cell containing a pandas Series 
-                            object or a numpy ndarray, OR a 2D NumPy array with the same shape and containing
-                            a 1D NumPy array in each cell.
-            """
+        Args:
+            X_test (DataFrame or ndarray): The input MTS that can be stored as a DataFrame containing the data with samples as 
+                        rows and variables as columns, and each cell containing a pandas Series 
+                        object or a numpy ndarray, OR a 2D NumPy array with the same shape and containing
+                        a 1D NumPy array in each cell.
+        """
 
-            # if X is a dataframe, convert into npy array
-            if isinstance(X_test, pd.DataFrame):
-                X = convert_to_numpy(X)  
+        # if X is a dataframe, convert into npy array
+        if isinstance(X_test, pd.DataFrame):
+            X_test = convert_to_numpy(X_test)  
 
-            # Assign the clusters based on k-means using the learned common spaces
-            I, _ = assign_clusters(X_test, self.S, self.K)
-            
-            # Assign new clusters
-            idx = [np.where(I == k)[0] for k in range(self.K)]
+        # Initialize the indices
+        idx = np.array_split(np.arange(X_test.shape[0]), self.K)
 
-            return idx
+        # Assign the clusters based on k-means using the learned common spaces
+        I, _ = assign_clusters(X_test, self.S, self.K)
         
-        def get_params(self):
-            """
-            Return the parameters of the model.
+        # Assign new clusters
+        idx = [np.where(I == k)[0] for k in range(self.K)]
 
-            Returns:
-                dict: A dictionary containing the parameters of the model.
-            """
-            return {'K': self.K, 'p': self.p, 'epsilon': self.epsilon, 'max_iter': self.max_iter, 'S' : self.S, 'idx' : self.idx, 'E' : self.E}
+        return idx
+    
+    def get_params(self):
+        """
+        Return the parameters of the model.
+
+        Returns:
+            dict: A dictionary containing the parameters of the model.
+        """
+        return {'K': self.K, 'p': self.p, 'epsilon': self.epsilon, 'max_iter': self.max_iter, 'S' : self.S, 'idx' : self.idx, 'E' : self.E}
+    
+    def save_model(self, path: str):
+        """
+        Save the model to disk using pickle.
+
+        Args:
+            path (str): The path to the file where the model should be saved.
+        """
+        with open(path, 'wb') as file:
+            pickle.dump(self, file)
         
-        def save_model(self, path : str):
-            """
-            Save the model to disk.
 
-            Args:
-                path (str): The path to the file where the model should be saved.
-            """
-            np.savez(path, **self.get_params())
-        
-        def load_model(self, path: str):
-            """
-            Load the model from disk.
+    def load_model(cls, path: str):
+        """
+        Load a model from disk using pickle.
 
-            Args:
-                path (str): The path to the file where the model is saved.
-            """
-            try:
-                params = np.load(path, allow_pickle=True)
+        Args:
+            path (str): The path to the file from which the model should be loaded.
 
-                # Vérifier que toutes les clés nécessaires sont présentes
-                required_keys = {'K', 'p', 'epsilon', 'max_iter', 'S', 'idx', 'E'}
-                if not required_keys.issubset(set(params)):
-                    raise KeyError("Le fichier chargé ne contient pas toutes les clés nécessaires.")
-
-                # Mettre à jour les attributs de l'instance
-                self.K = int(params['K'])
-                self.p = int(params['p'])
-                self.epsilon = float(params['epsilon'])
-                self.max_iter = int(params['max_iter'])
-                self.S = params['S'].tolist()
-                self.idx = params['idx'].tolist()
-                self.E = params['E'].tolist()
-
-            except IOError:
-                print(f"Erreur : Impossible de charger le fichier depuis {path}")
-            except KeyError as e:
-                print(f"Erreur de clé : {e}")
+        Returns:
+            Mc2PCA: The loaded model.
+        """
+        with open(path + '.pkl', 'rb') as file:
+            return pickle.load(file)
