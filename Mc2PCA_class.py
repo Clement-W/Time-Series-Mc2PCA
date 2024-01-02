@@ -253,6 +253,9 @@ class Mc2PCA() :
         if isinstance(X_test, pd.DataFrame):
             X_test = convert_to_numpy(X_test)  
 
+        # Center the data
+        X_test = center_data(X_test)
+
         # Assign the clusters based on k-means using the learned common spaces
         I, _ = assign_clusters(X_test, self.S, self.K)
         
