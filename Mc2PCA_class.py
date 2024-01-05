@@ -91,8 +91,10 @@ def CPCA(Sigma, p):
         ndarray: The common space of the cluster.
     """
     mean_cov = np.mean(Sigma, axis=0) # mean covariance matrix of the cluster
-    _, _, vt = np.linalg.svd(mean_cov) # SVD of the mean covariance matrix
-    return vt[:p,:].T # return the first p principal components
+    _, val_propre, vt = np.linalg.svd(mean_cov) # SVD of the mean covariance matrix
+    val_propre = val_propre**2 # eigenvalues of the mean covariance matrix
+    prct_info =  np.sum(val_propre[:p]/np.sum(val_propre))
+    return vt[:p,:].T, prct_info # return the first p principal components and the information retained
 
 
 def compute_common_spaces(cov_matrices,cluster_indices,p):
@@ -112,12 +114,15 @@ def compute_common_spaces(cov_matrices,cluster_indices,p):
         list of ndarray: A list of K arrays, each array containing the common space of the kth cluster.
     """
     S = []
+    info_by_cluster = []
     for indices in cluster_indices:
         if len(indices) > 0: # ensure that the cluster is not empty
-            S.append(CPCA([cov_matrices[i] for i in indices], p))
+            vec_propres, prct_info = CPCA([cov_matrices[i] for i in indices], p)
+            S.append(vec_propres)
+            info_by_cluster.append(prct_info)
         else:
             S.append(None)
-    return S
+    return S, info_by_cluster
 
 
 def assign_clusters(X,S,K):
@@ -186,6 +191,7 @@ class Mc2PCA() :
         self.S = None
         self.idx = None
         self.E = None
+        self.info_by_cluster = None
 
 
 
@@ -212,7 +218,7 @@ class Mc2PCA() :
         # Initialize the indices
         idx = np.array_split(np.arange(X.shape[0]), self.K)
         # Initialize the associated common spaces
-        S = compute_common_spaces(cov_matrices,idx,self.p)
+        S, _ = compute_common_spaces(cov_matrices,idx,self.p)
 
         # Store the errors
         E = [np.inf]
@@ -231,12 +237,13 @@ class Mc2PCA() :
             idx = [np.where(I == k)[0] for k in range(self.K)]
 
             # Compute the new common spaces after the assignment
-            S = compute_common_spaces(cov_matrices,idx,self.p)
+            S, info_by_cluster = compute_common_spaces(cov_matrices,idx,self.p)
 
+        self.info_by_cluster = info_by_cluster
         self.idx = idx
         self.E = E
         self.S = S
-        return idx, E
+        return idx, E, info_by_cluster
 
     def inference(self, X_test : np.ndarray or pd.DataFrame):
         """  
