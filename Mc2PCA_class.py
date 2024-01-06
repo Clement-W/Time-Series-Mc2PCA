@@ -223,7 +223,7 @@ class Mc2PCA() :
         # Store the errors
         E = [np.inf]
 
-        for t in tqdm(range(1, self.max_iter + 1)):
+        for t in tqdm(range(1, self.max_iter + 1), leave=False):
 
             # Assign the clusters based on k-means
             I,v = assign_clusters(X,S,self.K)
