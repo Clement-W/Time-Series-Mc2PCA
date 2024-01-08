@@ -3,6 +3,9 @@ import pandas as pd
 from tqdm import tqdm
 import pickle
 
+from scipy.spatial.distance import cosine
+from dtw import dtw
+
 
 def convert_to_numpy(df):
     """
@@ -125,7 +128,7 @@ def compute_common_spaces(cov_matrices,cluster_indices,p):
     return S, info_by_cluster
 
 
-def assign_clusters(X,S,K):
+def assign_clusters(X,S,K, distance_metric='euclidean'):
     """
     Assign each multivariate time series to a cluster based on the reconstruction error.
 
@@ -153,7 +156,14 @@ def assign_clusters(X,S,K):
             for i in range(n):
                 time_series = np.column_stack(X[i, :])  # Stacking the 1D arrays in the row into a 2D array (length,nb_variables)
                 Y = np.matmul(time_series, sst)
-                err = np.linalg.norm(time_series - Y, axis=1)
+                if distance_metric == 'euclidean':
+                    err = np.linalg.norm(time_series - Y, axis=1)
+                elif distance_metric == 'cosine':
+                    err = np.array([cosine(time_series[j], Y[j]) for j in range(time_series.shape[0])])
+                elif distance_metric == 'dtw':
+                    err = np.array([dtw(time_series[j],Y[j]).distance for j in range(time_series.shape[0])])
+                elif distance_metric == 'l1':
+                    err = np.linalg.norm(time_series - Y, ord=1, axis=1)
                 Error[i, k] = np.mean(err)  # Mean error for the time series
         else:
             Error[:, k] = np.inf
@@ -167,7 +177,8 @@ class Mc2PCA() :
                     K : int,
                     p : int,
                     epsilon : float = 1e-7,
-                    max_iter : int = 100) :
+                    max_iter : int = 100, 
+                    distance_metric : str = 'euclidean') :
         """
         Perform the Mc2PCA algorithm on the given DataFrame or NumPy array.
         Implementation following the algorithm described in the paper:
@@ -178,7 +189,7 @@ class Mc2PCA() :
             p (int): The number of principal components to retain in CPCA.
             epsilon (float): The threshold for convergence. 
             max_iter (int, optional): The maximum number of iterations for the clustering algorithm. Defaults to 100.
-
+            distance_metric (str, optional): The distance metric to use for the clustering algorithm. The values can be: 'euclidean', 'cosine', 'dtw', 'l1'. Defaults to 'euclidean'.
         Returns:
             tuple: A tuple containing two elements:
                 - list: A list containing K arrays, each array containing the indices of the samples in the kth cluster.
@@ -188,10 +199,12 @@ class Mc2PCA() :
         self.p = p
         self.epsilon = epsilon
         self.max_iter = max_iter
+        self.distance_metric = distance_metric
         self.S = None
         self.idx = None
         self.E = None
         self.info_by_cluster = None
+
 
 
 
@@ -226,7 +239,7 @@ class Mc2PCA() :
         for t in tqdm(range(1, self.max_iter + 1), leave=False):
 
             # Assign the clusters based on k-means
-            I,v = assign_clusters(X,S,self.K)
+            I,v = assign_clusters(X,S,self.K, distance_metric= self.distance_metric)
             E.append(np.sum(v)/len(v)) # normalize the error
 
             # Check convergence
@@ -245,7 +258,7 @@ class Mc2PCA() :
         self.S = S
         return idx, E, info_by_cluster
 
-    def inference(self, X_test : np.ndarray or pd.DataFrame):
+    def inference(self, X_test : np.ndarray or pd.DataFrame, distance_metric='euclidean'):
         """  
         Perform inference on the given test set using the learned model.
 
@@ -254,6 +267,7 @@ class Mc2PCA() :
                         rows and variables as columns, and each cell containing a pandas Series 
                         object or a numpy ndarray, OR a 2D NumPy array with the same shape and containing
                         a 1D NumPy array in each cell.
+            
         """
 
         # if X is a dataframe, convert into npy array
@@ -264,7 +278,7 @@ class Mc2PCA() :
         X_test = center_data(X_test)
 
         # Assign the clusters based on k-means using the learned common spaces
-        I, _ = assign_clusters(X_test, self.S, self.K)
+        I, _ = assign_clusters(X_test, self.S, self.K, distance_metric = self.distance_metric)
         
         # Assign new clusters
         idx = [np.where(I == k)[0] for k in range(self.K)]
