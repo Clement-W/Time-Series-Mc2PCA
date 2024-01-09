@@ -2,9 +2,144 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 import pickle
-
 from scipy.spatial.distance import cosine
 from dtw import dtw
+
+class Mc2PCA() :
+    def __init__(self, 
+                    K : int,
+                    p : int,
+                    epsilon : float = 1e-7,
+                    max_iter : int = 100, 
+                    distance_metric : str = 'euclidean') :
+        """
+        Perform the Mc2PCA algorithm on the given DataFrame or NumPy array.
+        Implementation following the algorithm described in the paper:
+        Li, H. (2019). Multivariate time series clustering based on common principal component analysis. Neurocomputing, 349.
+
+        Args: 
+            K (int): The number of clusters to form using k-means.
+            p (int): The number of principal components to retain in CPCA.
+            epsilon (float): The threshold for convergence. 
+            max_iter (int, optional): The maximum number of iterations for the clustering algorithm. Defaults to 100.
+            distance_metric (str, optional): The distance metric to use for the clustering algorithm. The values can be: 'euclidean', 'cosine', 'dtw', 'l1'. Defaults to 'euclidean'.
+            S (list of ndarray): A list of K arrays, each array containing the common space of the kth cluster.
+            idx (list of list of int): A list of K lists, each containing the indices of the samples in the kth cluster.
+            E (list of float): A list containing the errors at each iteration.
+            info_by_cluster (list of float): A list containing the information percentage retained by each cluster.
+        """
+        self.K = K
+        self.p = p
+        self.epsilon = epsilon
+        self.max_iter = max_iter
+        self.distance_metric = distance_metric
+        self.S = None
+        self.idx = None
+        self.E = None
+        self.info_by_cluster = None
+
+
+    def fit(self, X : np.ndarray or pd.DataFrame):
+        """
+        Fit the model to the given data.
+
+        Args:
+            X (DataFrame or ndarray): The input MTS that can be stored as a DataFrame containing the data with samples as 
+                                        rows and variables as columns, and each cell containing a pandas Series 
+                                        object or a numpy ndarray, OR a 2D NumPy array with the same shape and containing
+                                        a 1D NumPy array in each cell.
+        """
+
+        # if X is a dataframe, convert into npy array
+        if isinstance(X, pd.DataFrame):
+            X = convert_to_numpy(X)
+
+        # Center the data
+        X = center_data(X)
+        # Compute the covariance matrices of each time series
+        cov_matrices = compute_covariance_matrices(X)
+    
+        # Initialize the indices
+        idx = np.array_split(np.arange(X.shape[0]), self.K)
+        # Initialize the associated common spaces
+        S, _ = compute_common_spaces(cov_matrices,idx,self.p)
+
+        # Store the errors
+        E = [np.inf]
+
+        for t in tqdm(range(1, self.max_iter + 1), leave=False):
+
+            # Assign the clusters based on k-means
+            I,v = assign_clusters(X,S,self.K, distance_metric= self.distance_metric)
+            E.append(np.sum(v)/len(v)) # normalize the error
+
+            # Check convergence
+            if np.abs(E[t-1] - E[t]) < self.epsilon:
+                break
+            
+            # Assign new clusters
+            idx = [np.where(I == k)[0] for k in range(self.K)]
+
+            # Compute the new common spaces after the assignment
+            S, info_by_cluster = compute_common_spaces(cov_matrices,idx,self.p)
+
+        # Store the results in the class attributes
+        self.info_by_cluster = info_by_cluster
+        self.idx = idx
+        self.E = E
+        self.S = S
+        return idx, E, info_by_cluster
+
+    def inference(self, X_test : np.ndarray or pd.DataFrame):
+        """  
+        Perform inference on the given test set using the learned model.
+
+        Args:
+            X_test (DataFrame or ndarray): The input MTS that can be stored as a DataFrame containing the data with samples as 
+                        rows and variables as columns, and each cell containing a pandas Series 
+                        object or a numpy ndarray, OR a 2D NumPy array with the same shape and containing
+                        a 1D NumPy array in each cell.
+            
+        """
+
+        # if X is a dataframe, convert into npy array
+        if isinstance(X_test, pd.DataFrame):
+            X_test = convert_to_numpy(X_test)  
+
+        # Center the data
+        X_test = center_data(X_test)
+
+        # Assign the clusters based on k-means using the learned common spaces
+        I, _ = assign_clusters(X_test, self.S, self.K, distance_metric = self.distance_metric)
+        
+        # Assign new clusters
+        idx = [np.where(I == k)[0] for k in range(self.K)]
+
+        return idx
+    
+    def save_model(self, path: str):
+        """
+        Save the model using pickle.
+
+        Args:
+            path (str): The path to the file where the model should be saved.
+        """
+        with open(path, 'wb') as file:
+            pickle.dump(self, file)
+        
+
+    def load_model(cls, path: str):
+        """
+        Load a model using pickle.
+
+        Args:
+            path (str): The path to the file from which the model should be loaded.
+
+        Returns:
+            Mc2PCA: The loaded model.
+        """
+        with open(path + '.pkl', 'rb') as file:
+            return pickle.load(file)
 
 
 def convert_to_numpy(df):
@@ -141,6 +276,7 @@ def assign_clusters(X,S,K, distance_metric='euclidean'):
                         where each cell contains a 1D NumPy array representing a time series.
         S (list of ndarray): A list of K arrays, each array containing the common space of the kth cluster.
         K (int): The number of clusters.
+        distance_metric (str, optional): The distance metric to use for error in the clustering algorithm. The values can be: 'euclidean', 'cosine', 'dtw', 'l1'. Defaults to 'euclidean'.
     
     Returns:
         tuple: A tuple containing two elements:
@@ -171,149 +307,3 @@ def assign_clusters(X,S,K, distance_metric='euclidean'):
     I = np.argmin(Error, axis=1)
     v = Error[np.arange(n), I]
     return I, v
-
-class Mc2PCA() :
-    def __init__(self, 
-                    K : int,
-                    p : int,
-                    epsilon : float = 1e-7,
-                    max_iter : int = 100, 
-                    distance_metric : str = 'euclidean') :
-        """
-        Perform the Mc2PCA algorithm on the given DataFrame or NumPy array.
-        Implementation following the algorithm described in the paper:
-        Li, H. (2019). Multivariate time series clustering based on common principal component analysis. Neurocomputing, 349.
-
-        Args: 
-            K (int): The number of clusters to form using k-means.
-            p (int): The number of principal components to retain in CPCA.
-            epsilon (float): The threshold for convergence. 
-            max_iter (int, optional): The maximum number of iterations for the clustering algorithm. Defaults to 100.
-            distance_metric (str, optional): The distance metric to use for the clustering algorithm. The values can be: 'euclidean', 'cosine', 'dtw', 'l1'. Defaults to 'euclidean'.
-        Returns:
-            tuple: A tuple containing two elements:
-                - list: A list containing K arrays, each array containing the indices of the samples in the kth cluster.
-                - list: The list of errors at each iteration.
-        """
-        self.K = K
-        self.p = p
-        self.epsilon = epsilon
-        self.max_iter = max_iter
-        self.distance_metric = distance_metric
-        self.S = None
-        self.idx = None
-        self.E = None
-        self.info_by_cluster = None
-
-
-
-
-    def fit(self, X : np.ndarray or pd.DataFrame):
-        """
-        Fit the model to the given data.
-
-        Args:
-            X (DataFrame or ndarray): The input MTS that can be stored as a DataFrame containing the data with samples as 
-                                        rows and variables as columns, and each cell containing a pandas Series 
-                                        object or a numpy ndarray, OR a 2D NumPy array with the same shape and containing
-                                        a 1D NumPy array in each cell.
-        """
-
-        # if X is a dataframe, convert into npy array
-        if isinstance(X, pd.DataFrame):
-            X = convert_to_numpy(X)
-
-        # Center the data
-        X = center_data(X)
-        # Compute the covariance matrices of each time series
-        cov_matrices = compute_covariance_matrices(X)
-    
-        # Initialize the indices
-        idx = np.array_split(np.arange(X.shape[0]), self.K)
-        # Initialize the associated common spaces
-        S, _ = compute_common_spaces(cov_matrices,idx,self.p)
-
-        # Store the errors
-        E = [np.inf]
-
-        for t in tqdm(range(1, self.max_iter + 1), leave=False):
-
-            # Assign the clusters based on k-means
-            I,v = assign_clusters(X,S,self.K, distance_metric= self.distance_metric)
-            E.append(np.sum(v)/len(v)) # normalize the error
-
-            # Check convergence
-            if np.abs(E[t-1] - E[t]) < self.epsilon:
-                break
-            
-            # Assign new clusters
-            idx = [np.where(I == k)[0] for k in range(self.K)]
-
-            # Compute the new common spaces after the assignment
-            S, info_by_cluster = compute_common_spaces(cov_matrices,idx,self.p)
-
-        self.info_by_cluster = info_by_cluster
-        self.idx = idx
-        self.E = E
-        self.S = S
-        return idx, E, info_by_cluster
-
-    def inference(self, X_test : np.ndarray or pd.DataFrame, distance_metric='euclidean'):
-        """  
-        Perform inference on the given test set using the learned model.
-
-        Args:
-            X_test (DataFrame or ndarray): The input MTS that can be stored as a DataFrame containing the data with samples as 
-                        rows and variables as columns, and each cell containing a pandas Series 
-                        object or a numpy ndarray, OR a 2D NumPy array with the same shape and containing
-                        a 1D NumPy array in each cell.
-            
-        """
-
-        # if X is a dataframe, convert into npy array
-        if isinstance(X_test, pd.DataFrame):
-            X_test = convert_to_numpy(X_test)  
-
-        # Center the data
-        X_test = center_data(X_test)
-
-        # Assign the clusters based on k-means using the learned common spaces
-        I, _ = assign_clusters(X_test, self.S, self.K, distance_metric = self.distance_metric)
-        
-        # Assign new clusters
-        idx = [np.where(I == k)[0] for k in range(self.K)]
-
-        return idx
-    
-    def get_params(self):
-        """
-        Return the parameters of the model.
-
-        Returns:
-            dict: A dictionary containing the parameters of the model.
-        """
-        return {'K': self.K, 'p': self.p, 'epsilon': self.epsilon, 'max_iter': self.max_iter, 'S' : self.S, 'idx' : self.idx, 'E' : self.E}
-    
-    def save_model(self, path: str):
-        """
-        Save the model to disk using pickle.
-
-        Args:
-            path (str): The path to the file where the model should be saved.
-        """
-        with open(path, 'wb') as file:
-            pickle.dump(self, file)
-        
-
-    def load_model(cls, path: str):
-        """
-        Load a model from disk using pickle.
-
-        Args:
-            path (str): The path to the file from which the model should be loaded.
-
-        Returns:
-            Mc2PCA: The loaded model.
-        """
-        with open(path + '.pkl', 'rb') as file:
-            return pickle.load(file)
