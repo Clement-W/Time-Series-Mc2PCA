@@ -1,3 +1,8 @@
+"""
+This file contains the functions to load and parse the data from the raw files for the 
+MOCAP and Epilepsy datasets.
+"""
+
 import pandas as pd 
 import numpy as np
 import os 
@@ -73,35 +78,33 @@ def load_arff_data(file_path):
 
 def transform_dataframe(df, dim_number):
     """
-    Transforme le DataFrame pour créer une colonne 'time_series_dimX' où X est le numéro de la dimension,
-    et conserve la colonne 'activity'.
+    Transform the DataFrame to create a 'time_series_dimX' column where X is the dimension number,
+    and keep the 'activity' column.
     """
-    # Sélectionner toutes les colonnes sauf 'activity' pour créer la série temporelle
-    time_series_columns = df.columns[:-1]  # Toutes les colonnes sauf la dernière
+    # Select all columns except 'activity' to create the time series
+    time_series_columns = df.columns[:-1] 
 
-    # Créer une nouvelle colonne 'time_series_dimX' qui contient les valeurs des séries temporelles sous forme de numpy arrays
+    # Create a new column 'time_series_dimX' that contains the time series values as numpy arrays
     column_name = f'dim{dim_number}'
     df[column_name] = df[time_series_columns].apply(lambda row: np.array(row), axis=1)
     
-    # Créer un nouveau dataframe avec seulement la colonne 'time_series_dimX' et 'activity'
+    # Create a new dataframe with only the 'time_series_dimX' and 'activity' columns
     new_df = df[[column_name, 'activity']]
 
     return new_df
 
 def transform_data(paths_train):
-    # Initialiser un DataFrame vide pour contenir les données transformées
     df_transformed = pd.DataFrame()
 
-    # Boucle pour traiter chaque fichier
     for i, path in enumerate(paths_train):
         df = load_arff_data(path)
         df_dim_transformed = transform_dataframe(df, i)
-        
-        # Si c'est le premier fichier, initialiser df_transformed avec df_dim_transformed
+
+        # If it's the first file, initialize df_transformed with df_dim_transformed
         if df_transformed.empty:
             df_transformed = df_dim_transformed
         else:
-            # Sinon, fusionner sur la colonne 'activity'
+            # Else, merge df_transformed and df_dim_transformed
             df_transformed[f'dim{i}'] = df_dim_transformed[f'dim{i}']
     return df_transformed
 

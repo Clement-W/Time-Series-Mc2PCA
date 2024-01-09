@@ -1,5 +1,8 @@
+"""
+This file contains the functions to evaluate the results of the clustering.
+"""
+
 from sklearn.metrics import confusion_matrix, adjusted_rand_score
-from scipy.stats import mode
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -58,15 +61,13 @@ def compute_recall(C, G):
 
 def get_p_max(X, K, y_test, metric = "precision", seuil = 1e-7, max_iter = 50):
     """ 
-    Compute the optimal p for Mc2PCA for a given metric.
+    Compute the optimal p for Mc2PCA according to a given metric.
     """
     nbre_features = X.shape[1] # Works for DataFrame and numpy array
 
     idx_test = [np.where(y_test == str(i))[0] for i in range(1,np.max(y_test.astype(int))+1)]
     y_estimate = None
-    val = np.inf
     values = []
-    p_opt = 0
     for p in range(1, nbre_features):
         model = Mc2PCA(K, p, seuil, max_iter=max_iter)
         idx_estimate, _, _ = model.fit(X)
@@ -86,16 +87,18 @@ def get_p_max(X, K, y_test, metric = "precision", seuil = 1e-7, max_iter = 50):
     return np.argmax(values) + 1, values
 
 def get_p_histo(X, K, y_test, seuil = 1e-7, max_iter = 50, p_max = None):
+    """
+    Compute the metrics for different values of p for Mc2PCA.
+    p is the number of retained components.
+    """
     if p_max is None:
         p_max = X.shape[1] # Works for DataFrame and numpy array
     idx_test = [np.where(y_test == str(i))[0] for i in range(1,np.max(y_test.astype(int))+1)]
     y_estimate = None
-    val = np.inf
     precisions = []
     recalls = []
     aris = []
-    p_opt = 0
-    for p in range(1, p_max + 1): #nbre_features:
+    for p in range(1, p_max + 1):
         model = Mc2PCA(K, p, seuil, max_iter=max_iter)
         idx_estimate, _, _ = model.fit(X)
         y_estimate = np.arange(len(y_test))
@@ -108,18 +111,15 @@ def get_p_histo(X, K, y_test, seuil = 1e-7, max_iter = 50, p_max = None):
 
 def get_results_distance(X, K, y_test, seuil = 1e-7, max_iter = 50):
     """
-    Compute the results for different distance metrics for the reconstruction error.
+    Compute the results for different distance metrics used for the reconstruction error.
     """
-    nbre_features = X.shape[1] # Works for DataFrame and numpy array
     idx_test = [np.where(y_test == str(i))[0] for i in range(1,np.max(y_test.astype(int))+1)]
     y_estimate = None
-    val = np.inf
     precisions = []
     recalls = []
     aris = []
-    p_opt = 0
     distances = ["euclidean", "dtw", "l1", "cosine"]
-    for distance in distances: #nbre_features:
+    for distance in distances:
         model = Mc2PCA(K, 3, seuil, max_iter=max_iter, distance_metric=distance)
         idx_estimate, _, _ = model.fit(X)
         y_estimate = np.arange(len(y_test))
@@ -145,7 +145,6 @@ def plot_info(X, K, seuil = 1e-7, max_iter = 50):
     info_tot = np.array(info_tot)
     for i in range(K):
         plt.plot(np.arange(1, nbre_features + 1), info_tot[:, i], label = "Cluster " + str(i+1), marker = 'x')
-
     plt.legend() 
     plt.title("Cumulative Information for each cluster for different p")
     plt.xlabel("Number of p for Mc2PCA")
@@ -155,7 +154,9 @@ def plot_info(X, K, seuil = 1e-7, max_iter = 50):
     plt.show()
 
 def plot_confusion_matrix(y_true, y_pred, classes):
-    # Compute confusion matrix
+    """
+    Plot the confusion matrix.
+    """
     conf_matrix = confusion_matrix(y_true, y_pred, labels=classes)
 
     #Plot confusion matrix
@@ -168,6 +169,11 @@ def plot_confusion_matrix(y_true, y_pred, classes):
     plt.show()
 
 def metrics(y_test, idx_estimate,plot=True):
+    """
+    Compute the ARI score, precision and recall according to the results of the clustering.
+    Plot the results by default.
+    """
+
     # Convert y_test to a list of numpy arrays as in idx_estimate
     idx_test = [np.where(y_test == str(i))[0] for i in range(1,np.max(y_test.astype(int))+1)]
 
