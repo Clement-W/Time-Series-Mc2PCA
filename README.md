@@ -1,6 +1,9 @@
 # Time-Series-Mc2PCA
 
-Implementation of the paper _Li, H. (2019). Multivariate time series clustering based on common principal component analysis. Neurocomputing, 349, 239-247_.
+Analysis of the paper 
+> Li, H. (2019). Multivariate time series clustering based on common principal component analysis. Neurocomputing, 349, 239-247
+
+In this project, we focus on a thorough analysis and independent implementation from scratch of the method. We evaluated this method on a new dataset, along with two of the datasets originally used by the authors. Our exploration also extended to examining the method’s limitations and potential for improvement through four specific experiments: assessing performance with unbalanced data, evaluating sensitivity to noise, determining the optimal number of principal components to use, and experimenting with different distance metrics for calculating the reconstruction error. [Our report](TS_report.pdf) contains the paper analysis, our results and critical perspectives.
 
 Files description:
 - `Mc2PCA_class.py`: Contains the implementation of the Mc2PCA algorithm
